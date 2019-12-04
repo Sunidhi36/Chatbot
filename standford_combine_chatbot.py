@@ -1,10 +1,14 @@
-data_path = 'data/cornell movie-dialogs corpus'
-convo_file = 'movie_conversations.txt'
-line_file = 'movie_lines.txt'
-output_file = 'output_convo.txt'
-processed_path = 'processed'
-cpt_path = 'checkpoints'
-
+#data_path = 'data/cornell movie-dialogs corpus'
+data_path = '/home/sunidhi/Desktop/chatbot/cornell movie-dialogs corpus'
+#convo_file = 'movie_conversations.txt'
+convo_file='/home/sunidhi/Desktop/chatbot/movie_conversations.txt'
+#line_file = 'movie_lines.txt'
+line_file='/home/sunidhi/Desktop/chatbot/movie_lines.txt'
+#output_file = 'output_convo.txt'
+output_file='/home/sunidhi/Desktop/chatbot/output_convo.txt'
+#processed_path = 'processed'
+processed_path='/home/sunidhi/Desktop/chatbot/processed'
+cpt_path = 'checkpoints' 
 threshold = 2
 
 pad_id = 0
@@ -25,7 +29,8 @@ CONTRACTIONS = [("i ' m ", "i 'm "), ("' d ", "'d "), ("' s ", "'s "),
 num_layers = 3
 hidden_size = 256
 batch_size = 64
-
+DEC_VOCAB=10000
+ENC_VOCAB=5000
 lr = 0.5
 max_grad_norm = 5.0
 
@@ -36,9 +41,12 @@ os.environ['TF_CPP_MIN_LOG_LEVEL']='2'
 import random
 import sys
 import time
-
+import re
 import numpy as np
 import tensorflow as tf
+
+
+
 
 #from standford_model import ChatBotModel
 #import config
@@ -70,8 +78,8 @@ class ChatBotModel:
         # If we use sampled softmax, we need an output projection.
         # Sampled softmax only makes sense if we sample less than vocabulary size.
         if num_samples > 0 and num_samples < DEC_VOCAB:
-            w = tf.get_variable('proj_w', [hidden_size, config.DEC_VOCAB])
-            b = tf.get_variable('proj_b', [config.DEC_VOCAB])
+            w = tf.get_variable('proj_w', [hidden_size, DEC_VOCAB])
+            b = tf.get_variable('proj_b', [DEC_VOCAB])
             self.output_projection = (w, b)
 
         def sampled_loss(logits, labels):
@@ -81,7 +89,7 @@ class ChatBotModel:
                                               inputs=logits, 
                                               labels=labels, 
                                               num_sampled=num_samples, 
-                                              num_classes=config.DEC_VOCAB)
+                                              num_classes=DEC_VOCAB)
         self.softmax_loss_function = sampled_loss
 
         single_cell = tf.contrib.rnn.GRUCell(hidden_size)
@@ -95,8 +103,8 @@ class ChatBotModel:
             setattr(tf.contrib.rnn.MultiRNNCell, '__deepcopy__', lambda self, _: self)
             return tf.contrib.legacy_seq2seq.embedding_attention_seq2seq(
                     encoder_inputs, decoder_inputs, self.cell,
-                    num_encoder_symbols=config.ENC_VOCAB,
-                    num_decoder_symbols=config.DEC_VOCAB,
+                    num_encoder_symbols=ENC_VOCAB,
+                    num_decoder_symbols=DEC_VOCAB,
                     embedding_size=hidden_size,
                     output_projection=self.output_projection,
                     feed_previous=do_decode)
@@ -159,6 +167,8 @@ class ChatBotModel:
         self._create_loss()
         self._creat_optimizer()
         self._create_summary()
+        
+      
 
 def get_lines():
     id2line = {}
@@ -274,7 +284,7 @@ def build_vocab(filename, normalize_digits=True):
         f.write('<\s>' + '\n') 
         index = 4
         for word in sorted_vocab:
-            if vocab[word] < THRESHOLD:
+            if vocab[word] < threshold:
                 break
             f.write(word + '\n')
             index += 1
@@ -332,8 +342,8 @@ def process_data():
     token2id('test', 'dec')
 
 def load_data(enc_filename, dec_filename, max_training_size=None):
-    encode_file = open(os.path.join(PROCESSED_PATH, enc_filename), 'r')
-    decode_file = open(os.path.join(PROCESSED_PATH, dec_filename), 'r')
+    encode_file = open(os.path.join(processed_path, enc_filename), 'r')
+    decode_file = open(os.path.join(processed_path, dec_filename), 'r')
     encode, decode = encode_file.readline(), decode_file.readline()
     data_buckets = [[] for _ in buckets]
     i = 0
@@ -351,7 +361,7 @@ def load_data(enc_filename, dec_filename, max_training_size=None):
     return data_buckets
 
 def _pad_input(input_, size):
-    return input_ + [PAD_ID] * (size - len(input_))
+    return input_ + [pad_id] * (size - len(input_))
 
 def _reshape_batch(inputs, size, batch_size):
     """ Create batch-major inputs. Batch inputs are just re-indexed inputs
@@ -366,7 +376,7 @@ def _reshape_batch(inputs, size, batch_size):
 def get_batch(data_buckets, bucket_id, batch_size=1):
     """ Return one batch to feed into the model """
     # only pad to the max length of the bucket
-    encoder_size, decoder_size = BUCKETS[bucket_id]
+    encoder_size, decoder_size = buckets[bucket_id]
     encoder_inputs, decoder_inputs = [], []
 
     for _ in range(batch_size):
@@ -388,7 +398,7 @@ def get_batch(data_buckets, bucket_id, batch_size=1):
             # the corresponding decoder is decoder_input shifted by 1 forward.
             if length_id < decoder_size - 1:
                 target = decoder_inputs[batch_id][length_id + 1]
-            if length_id == decoder_size - 1 or target == PAD_ID:
+            if length_id == decoder_size - 1 or target == pad_id:
                 batch_mask[batch_id] = 0.0
         batch_masks.append(batch_mask)
     return batch_encoder_inputs, batch_decoder_inputs, batch_masks
@@ -396,6 +406,8 @@ def get_batch(data_buckets, bucket_id, batch_size=1):
 if __name__ == '__main__':
     prepare_raw_data()
     process_data()
+    
+     
 
 def _get_random_bucket(train_buckets_scale):
     """ Get a random bucket from which to choose a training sample """
@@ -456,8 +468,8 @@ def _get_buckets():
     train_buckets_scale is the inverval that'll help us 
     choose a random bucket later on.
     """
-    test_buckets = data.load_data('test_ids.enc', 'test_ids.dec')
-    data_buckets = data.load_data('train_ids.enc', 'train_ids.dec')
+    test_buckets = load_data('test_ids.enc', 'test_ids.dec')
+    data_buckets = load_data('train_ids.enc', 'train_ids.dec')
     train_bucket_sizes = [len(data_buckets[b]) for b in range(len(buckets))]
     print("Number of samples in each bucket:\n", train_bucket_sizes)
     train_total_size = sum(train_bucket_sizes)
@@ -475,7 +487,7 @@ def _get_skip_step(iteration):
 
 def _check_restore_parameters(sess, saver):
     """ Restore the previously trained parameters if there are any. """
-    ckpt = tf.train.get_checkpoint_state(os.path.dirname(config.CPT_PATH + '/checkpoint'))
+    ckpt = tf.train.get_checkpoint_state(os.path.dirname(cpt_path + '/checkpoint'))
     if ckpt and ckpt.model_checkpoint_path:
         print("Loading parameters for the Chatbot")
         saver.restore(sess, ckpt.model_checkpoint_path)
@@ -489,7 +501,7 @@ def _eval_test_set(sess, model, test_buckets):
             print("  Test: empty bucket %d" % (bucket_id))
             continue
         start = time.time()
-        encoder_inputs, decoder_inputs, decoder_masks = data.get_batch(test_buckets[bucket_id], 
+        encoder_inputs, decoder_inputs, decoder_masks = get_batch(test_buckets[bucket_id], 
                                                                         bucket_id,
                                                                         batch_size=batch_size)
         _, step_loss, _ = run_step(sess, model, encoder_inputs, decoder_inputs, 
@@ -515,7 +527,7 @@ def train():
         while True:
             skip_step = _get_skip_step(iteration)
             bucket_id = _get_random_bucket(train_buckets_scale)
-            encoder_inputs, decoder_inputs, decoder_masks = data.get_batch(data_buckets[bucket_id], 
+            encoder_inputs, decoder_inputs, decoder_masks = get_batch(data_buckets[bucket_id], 
                                                                            bucket_id,
                                                                            batch_size=batch_size)
             start = time.time()
@@ -555,16 +567,16 @@ def _construct_response(output_logits, inv_dec_vocab):
     print(output_logits[0])
     outputs = [int(np.argmax(logit, axis=1)) for logit in output_logits]
     # If there is an EOS symbol in outputs, cut them at that point.
-    if config.EOS_ID in outputs:
-        outputs = outputs[:outputs.index(config.EOS_ID)]
+    if eos_id in outputs:
+        outputs = outputs[:outputs.index(eos_id)]
     # Print out sentence corresponding to outputs.
     return " ".join([tf.compat.as_str(inv_dec_vocab[output]) for output in outputs])
 
 def chat():
     """ in test mode, we don't to create the backward path
     """
-    _, enc_vocab = data.load_vocab(os.path.join(processed_path, 'vocab.enc'))
-    inv_dec_vocab, _ = data.load_vocab(os.path.join(processed_path, 'vocab.dec'))
+    _, enc_vocab = load_vocab(os.path.join(processed_path, 'vocab.enc'))
+    inv_dec_vocab, _ = load_vocab(os.path.join(processed_path, 'vocab.dec'))
 
     model = ChatBotModel(True, batch_size=1)
     model.build_graph()
@@ -576,7 +588,7 @@ def chat():
         _check_restore_parameters(sess, saver)
         output_file = open(os.path.join(processed_path, output_file), 'a+')
         # Decode from standard input.
-        max_length = config.BUCKETS[-1][0]
+        max_length = buckets[-1][0]
         print('Welcome to TensorBro. Say something. Enter to exit. Max length is', max_length)
         while True:
             line = _get_user_input()
@@ -586,7 +598,7 @@ def chat():
                 break
             output_file.write('HUMAN ++++ ' + line + '\n')
             # Get token-ids for the input sentence.
-            token_ids = data.sentence2id(enc_vocab, str(line))
+            token_ids = sentence2id(enc_vocab, str(line))
             if (len(token_ids) > max_length):
                 print('Max length I can handle is:', max_length)
                 line = _get_user_input()
@@ -594,7 +606,7 @@ def chat():
             # Which bucket does it belong to?
             bucket_id = _find_right_bucket(len(token_ids))
             # Get a 1-element batch to feed the sentence to the model.
-            encoder_inputs, decoder_inputs, decoder_masks = data.get_batch([(token_ids, [])], 
+            encoder_inputs, decoder_inputs, decoder_masks = get_batch([(token_ids, [])], 
                                                                             bucket_id,
                                                                             batch_size=1)
             # Get output logits for the sentence.
@@ -613,11 +625,11 @@ def main():
     args = parser.parse_args()
 
     if not os.path.isdir(processed_path):
-        data.prepare_raw_data()
-        data.process_data()
+        prepare_raw_data()
+        process_data()
     print('Data ready!')
     # create checkpoints folder if there isn't one already
-    data.make_dir(config.CPT_PATH)
+    make_dir(cpt_path)
 
     if args.mode == 'train':
         train()
