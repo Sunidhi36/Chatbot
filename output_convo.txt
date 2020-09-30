@@ -1,7 +1,7 @@
 HUMAN ++++ hi
 BOT ++++ hi
 HUMAN ++++ how are you?
-BOT ++++ i ' m okay .
+BOT ++++ i ' m good.
 HUMAN ++++ really?
 BOT ++++ i don ' t know what to say .
 HUMAN ++++ how're you?
